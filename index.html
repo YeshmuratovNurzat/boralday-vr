@@ -6,10 +6,11 @@
 <title>Боралдай сақ қорғандары — VR</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#bcd6ea}
-#panel{position:absolute;top:12px;left:12px;max-width:340px;background:rgba(255,255,255,.92);color:#1f1e1d;border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.5;z-index:2}
+#panel{position:absolute;top:12px;left:12px;max-width:350px;max-height:calc(100% - 90px);overflow:auto;background:rgba(255,255,255,.93);color:#1f1e1d;border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.5;z-index:2}
 #panel h1{font-size:17px;font-weight:500;margin:0 0 4px}
 #panel p{margin:4px 0}
 #panel button{font:inherit;font-size:13px;border:1px solid rgba(0,0,0,.2);background:#fff;border-radius:8px;padding:5px 10px;margin:6px 6px 0 0;cursor:pointer}
+#panel button.on{background:#e6f1fb;border-color:#378add}
 #panel .muted{color:#6b6a65;font-size:12px}
 #tip{position:absolute;pointer-events:none;background:rgba(255,255,255,.95);border-radius:8px;padding:6px 10px;font-size:12px;display:none;z-index:3;line-height:1.5}
 </style>
@@ -23,10 +24,12 @@ html,body{margin:0;height:100%;overflow:hidden;font-family:system-ui,-apple-syst
 <div id="panel">
 <h1>Боралдай сақ қорғандары</h1>
 <p>Нақты масштабтағы сызбалық модель: 47 оба, ~3 км × 800 м, ортадағы ең үлкен оба Ø100 м, биіктігі 14 м.</p>
-<button id="bird">Құс көзімен</button><button id="human">Адам көзімен</button>
-<p class="muted">Компьютерде: тінтуірмен айналдыру, дөңгелекпен жақындату. VR-де: төмендегі «ENTER VR» батырмасын басыңыз.</p>
-<p class="muted">VR басқару: триггер — сәулемен көрсетілген жерге телепорт; сол таяқша — жүру (бүйірдегі grip батырмасы — жылдам жүру); оң таяқша — 30° бұрылу.</p>
-<p class="muted">Обалардың орны шамамен берілген, бұл геодезиялық карта емес.</p>
+<button id="bird">Құс көзімен</button><button id="human">Адам көзімен</button><button id="inside">Обаның ішіне</button>
+<button id="cut">Кесіп көрсету</button><button id="sound">Дыбысты қосу</button>
+<p class="muted">Компьютерде: тінтуірмен айналдыру, дөңгелекпен жақындату. VR-де: төмендегі «ENTER VR» батырмасы.</p>
+<p class="muted">VR басқару: триггер — телепорт; сол таяқша — жүру (grip — жылдам); оң таяқша — бұрылу; X — обаның ішіне/сыртқа; A — кесіп көрсету; B — дыбыс.</p>
+<p class="muted">Ең үлкен обаның оңтүстік етегінде кіреберіс бар — дәлізбен ішке жаяу кіруге болады.</p>
+<p class="muted">Обалардың орны шамамен берілген. Ішкі құрылыс — Жетісу сақ обаларына тән үлгі бойынша жасалған реконструкция, Боралдайдың өз қазба деректері емес.</p>
 </div>
 <div id="tip"></div>
 <script type="module">
@@ -39,15 +42,18 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.xr.enabled = true;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
-document.body.appendChild(VRButton.createButton(renderer));
+const vrButton = VRButton.createButton(renderer);
+document.body.appendChild(vrButton);
 
 const SKY = 0xbcd6ea;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY);
 scene.fog = new THREE.Fog(SKY, 2000, 18000);
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 30000);
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 30000);
 const dolly = new THREE.Group();
 scene.add(dolly);
 dolly.add(camera);
@@ -56,20 +62,30 @@ camera.position.set(700, 900, 1900);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0, 0);
 controls.maxPolarAngle = Math.PI / 2.05;
-controls.minDistance = 5;
+controls.minDistance = 0.5;
 controls.maxDistance = 9000;
 controls.update();
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x6b8a4a, 0.9));
+const hemi = new THREE.HemisphereLight(0xffffff, 0x6b8a4a, 0.9);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff2dd, 1.6);
 sun.position.set(-1000, 1500, 800);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -75, right: 75, top: 75, bottom: -75, near: 100, far: 4000 });
+sun.shadow.bias = -0.0005;
 scene.add(sun);
+scene.add(sun.target);
 
-function noiseTex(base, amount, n) {
+function noiseTex(base, amount, n, stripes) {
   const size = 256, c = document.createElement('canvas');
   c.width = c.height = size;
   const g = c.getContext('2d');
   g.fillStyle = base; g.fillRect(0, 0, size, size);
+  if (stripes) for (let y = 0; y < size; y += 3) {
+    g.fillStyle = `rgba(40,20,5,${Math.random() * 0.25})`;
+    g.fillRect(0, y, size, 1 + Math.random() * 2);
+  }
   for (let i = 0; i < n; i++) {
     const v = (Math.random() - 0.5) * amount;
     g.fillStyle = v > 0 ? `rgba(255,255,210,${v})` : `rgba(0,30,0,${-v})`;
@@ -86,6 +102,7 @@ const groundTex = noiseTex('#8fae5c', 0.5, 9000);
 groundTex.repeat.set(1500, 1500);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(30000, 30000), new THREE.MeshLambertMaterial({ map: groundTex }));
 ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
 scene.add(ground);
 
 const plateauTex = noiseTex('#b7ad86', 0.45, 9000);
@@ -93,6 +110,7 @@ plateauTex.repeat.set(40, 150);
 const plateau = new THREE.Mesh(new THREE.PlaneGeometry(840, 3060), new THREE.MeshLambertMaterial({ map: plateauTex }));
 plateau.rotation.x = -Math.PI / 2;
 plateau.position.y = 0.05;
+plateau.receiveShadow = true;
 scene.add(plateau);
 
 function river(x0, amp, ph) {
@@ -152,16 +170,25 @@ moundTex.repeat.set(10, 4);
 const moundColors = [0xd9b98a, 0xe6cf9f, 0xf2e3bf];
 const moundGeo = new THREE.SphereGeometry(1, 64, 24, 0, Math.PI * 2, 0, Math.PI / 2);
 const mounds = data.map((o, i) => {
-  const m = new THREE.Mesh(moundGeo, new THREE.MeshLambertMaterial({ map: moundTex, color: moundColors[o.t] }));
+  const mat = new THREE.MeshLambertMaterial({ map: moundTex, color: moundColors[o.t] });
+  if (i === 0) mat.shadowSide = THREE.DoubleSide;
+  const m = new THREE.Mesh(moundGeo, mat);
   const r = o.d / 2;
   m.scale.set(r, o.h, r);
   m.position.set(o.x, 0, o.z);
   m.userData = { ...o, i: i + 1 };
+  if (i === 0) { m.castShadow = true; m.receiveShadow = true; }
   scene.add(m);
   return m;
 });
+const bigMound = mounds[0];
 
-function heightAt(x, z) {
+const CH = 3.2, CH_H = 2.5, COR_W = 0.75, COR_END = 49.6, COR_H = 2.1;
+function inZone(x, z) {
+  return (Math.abs(x) < CH && Math.abs(z) < CH) || (Math.abs(x) < COR_W && z >= CH - 0.2 && z <= COR_END + 0.6);
+}
+function heightAt(x, z, curY) {
+  if (inZone(x, z) && curY < 3) return 0;
   let y = 0;
   for (const o of data) {
     const r = o.d / 2, d = Math.hypot(x - o.x, z - o.z);
@@ -169,6 +196,105 @@ function heightAt(x, z) {
   }
   return y;
 }
+
+const woodTex = noiseTex('#7a5634', 0.35, 2500, true);
+woodTex.repeat.set(1, 4);
+const woodMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.95 });
+const earthTex = noiseTex('#6e5a3e', 0.5, 6000);
+earthTex.repeat.set(4, 4);
+const earthMat = new THREE.MeshStandardMaterial({ map: earthTex, roughness: 1 });
+const interior = new THREE.Group();
+scene.add(interior);
+const blockers = [];
+const floors = [];
+function add(mesh, isBlocker) {
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  interior.add(mesh);
+  if (isBlocker) blockers.push(mesh);
+  return mesh;
+}
+const logGeoCache = {};
+function log(len, axis, x, y, z) {
+  const key = len.toFixed(2);
+  if (!logGeoCache[key]) logGeoCache[key] = new THREE.CylinderGeometry(0.16, 0.16, len, 10);
+  const m = new THREE.Mesh(logGeoCache[key], woodMat);
+  if (axis === 'x') m.rotation.z = Math.PI / 2; else m.rotation.x = Math.PI / 2;
+  m.position.set(x, y, z);
+  return add(m, true);
+}
+const layers = Math.round(CH_H / 0.3);
+for (let i = 0; i < layers; i++) {
+  const y = 0.16 + i * 0.3;
+  log(CH * 2 + 0.4, 'z', -CH, y, 0);
+  log(CH * 2 + 0.4, 'z', CH, y, 0);
+  log(CH * 2 + 0.4, 'x', 0, y, -CH);
+  const seg = CH - COR_W;
+  log(seg, 'x', -(COR_W + seg / 2), y, CH);
+  log(seg, 'x', COR_W + seg / 2, y, CH);
+  if (y > COR_H) log(COR_W * 2, 'x', 0, y, CH);
+}
+for (let z = -CH - 0.16; z <= CH + 0.17; z += 0.3) log(CH * 2 + 0.6, 'x', 0, CH_H, z);
+const lid = add(new THREE.Mesh(new THREE.BoxGeometry(CH * 2 + 0.8, 0.3, CH * 2 + 0.8), earthMat), true);
+lid.position.y = CH_H + 0.3;
+const chFloor = add(new THREE.Mesh(new THREE.PlaneGeometry(CH * 2, CH * 2), earthMat), false);
+chFloor.rotation.x = -Math.PI / 2; chFloor.position.y = 0.08; floors.push(chFloor);
+
+const corLen = COR_END - CH;
+const corMid = CH + corLen / 2;
+const plankTex = noiseTex('#6b4a2b', 0.35, 4000, true);
+plankTex.rotation = Math.PI / 2; plankTex.repeat.set(corLen / 2, 1);
+const plankMat = new THREE.MeshStandardMaterial({ map: plankTex, roughness: 0.95 });
+[-COR_W - 0.1, COR_W + 0.1].forEach(x => {
+  const w = add(new THREE.Mesh(new THREE.BoxGeometry(0.2, COR_H, corLen), plankMat), true);
+  w.position.set(x, COR_H / 2, corMid);
+});
+const roof = add(new THREE.Mesh(new THREE.BoxGeometry(COR_W * 2 + 0.4, 0.2, corLen), plankMat), true);
+roof.position.set(0, COR_H + 0.1, corMid);
+const corFloor = add(new THREE.Mesh(new THREE.PlaneGeometry(COR_W * 2, corLen), earthMat), false);
+corFloor.rotation.x = -Math.PI / 2; corFloor.position.set(0, 0.08, corMid); floors.push(corFloor);
+const stoneMat = new THREE.MeshStandardMaterial({ color: 0x8a857a, roughness: 1, flatShading: true });
+[-COR_W - 0.35, COR_W + 0.35].forEach(x => {
+  const p = add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.6, 0.5), stoneMat), true);
+  p.position.set(x, 1.3, COR_END + 0.3);
+});
+const lintel = add(new THREE.Mesh(new THREE.BoxGeometry(COR_W * 2 + 1.3, 0.45, 0.6), stoneMat), true);
+lintel.position.set(0, 2.75, COR_END + 0.3);
+
+const bed = add(new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.35, 1.0), woodMat), false);
+bed.position.set(0, 0.25, -1.6);
+for (const [x, z] of [[-1.05, -1.2], [1.05, -1.2], [-1.05, -2], [1.05, -2]]) {
+  const leg = add(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.12), woodMat), false);
+  leg.position.set(x, 0.05, z);
+}
+const felt = add(new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.5, 6, 16), new THREE.MeshStandardMaterial({ color: 0x8a2f22, roughness: 1 })), false);
+felt.rotation.z = Math.PI / 2; felt.scale.set(1, 1, 0.7); felt.position.set(0, 0.6, -1.6);
+const clayMat = new THREE.MeshStandardMaterial({ color: 0xb06a3c, roughness: 0.9 });
+const potProfile = [[0, 0], [0.12, 0], [0.2, 0.08], [0.24, 0.2], [0.2, 0.34], [0.13, 0.4], [0.14, 0.44]].map(p => new THREE.Vector2(p[0], p[1]));
+const potGeo = new THREE.LatheGeometry(potProfile, 24);
+for (const [x, z, s] of [[-2.5, -2.5, 1], [-2.1, -2.6, 0.75], [2.5, -2.5, 0.9], [-2.6, 1.8, 1.1]]) {
+  const p = add(new THREE.Mesh(potGeo, clayMat), false);
+  p.scale.setScalar(s * 1.3); p.position.set(x, 0.08, z);
+}
+const bronze = new THREE.MeshStandardMaterial({ color: 0x9c6b2e, metalness: 0.7, roughness: 0.45 });
+const bowl = add(new THREE.Mesh(new THREE.LatheGeometry([[0, 0], [0.2, 0.02], [0.38, 0.15], [0.45, 0.35], [0.47, 0.4]].map(p => new THREE.Vector2(p[0], p[1])), 28), bronze), false);
+bowl.material.side = THREE.DoubleSide;
+bowl.position.set(2.1, 0.45, 1.6);
+for (let a = 0; a < 3; a++) {
+  const leg = add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.5, 8), bronze), false);
+  leg.position.set(2.1 + Math.cos(a * 2.094) * 0.28, 0.25, 1.6 + Math.sin(a * 2.094) * 0.28);
+}
+const bow = add(new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.025, 6, 24, Math.PI * 0.9), woodMat), false);
+bow.rotation.x = -Math.PI / 2; bow.position.set(0.9, 0.48, -1.0);
+
+const torch = new THREE.PointLight(0xffa04a, 14, 14, 2);
+torch.position.set(-2.4, 2.0, 2.4);
+interior.add(torch);
+const torch2 = new THREE.PointLight(0xffa04a, 6, 10, 2);
+torch2.position.set(0, 1.8, 26);
+interior.add(torch2);
+const flame = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffc070 }));
+flame.position.copy(torch.position);
+interior.add(flame);
 
 function canvasPlane(lines, w, h, scale) {
   const c = document.createElement('canvas');
@@ -194,11 +320,29 @@ const sign = canvasPlane([
   'Аумағы 430 га, 47 оба, ~3 км × 800 м',
   'Алдыңыздағы ең үлкен оба: Ø100 м, биіктігі 14 м',
   'Сақ және үйсін ақсүйектерінің жерленген орны',
-  'Сызбалық модель: обалардың орны шамамен берілген'
+  'Етекте кіреберіс бар — ішке кіріп көріңіз'
 ], 1000, 380, 0.004);
 sign.position.set(-4, 1.6, 120);
 sign.rotation.y = 0.25;
 scene.add(sign);
+
+const sign2 = canvasPlane([
+  'Ішкі құрылыс — реконструкция',
+  'Боралдай обалары әлі толық қазылмаған.',
+  'Бұл — Жетісу сақ обаларына тән үлгі:',
+  'шыршадан қиылған бөрене камера, ұзын',
+  'кіреберіс дәліз (дромос), ағаш төсек,',
+  'киізбен жабылған жерлеу, қыш ыдыстар,',
+  'қола қазан, садақ.'
+], 900, 420, 0.0026);
+sign2.position.set(-CH + 0.25, 1.5, 0.6);
+sign2.rotation.y = Math.PI / 2;
+interior.add(sign2);
+
+const sign3 = canvasPlane(['Кіреберіс (дромос)', 'Обаның ішіндегі камераға апарады'], 820, 170, 0.003);
+sign3.position.set(2.3, 1.6, COR_END + 0.8);
+sign3.rotation.y = -0.4;
+scene.add(sign3);
 
 const labelCanvas = document.createElement('canvas');
 labelCanvas.width = 512; labelCanvas.height = 192;
@@ -229,13 +373,90 @@ function showLabel(m) {
   label.visible = true;
 }
 
+let cutaway = false;
+function setCutaway(v) {
+  cutaway = v;
+  const m = bigMound.material;
+  m.transparent = v; m.opacity = v ? 0.22 : 1; m.depthWrite = !v; m.needsUpdate = true;
+  bigMound.castShadow = !v;
+  document.getElementById('cut').classList.toggle('on', v);
+}
+document.getElementById('cut').onclick = () => setCutaway(!cutaway);
+
+let actx = null, master, windGain, windFilter, birdBus, muffle, soundOn = false;
+function initAudio() {
+  if (actx) { actx.resume(); return; }
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  master = actx.createGain(); master.gain.value = 0;
+  muffle = actx.createBiquadFilter(); muffle.type = 'lowpass'; muffle.frequency.value = 18000;
+  muffle.connect(master); master.connect(actx.destination);
+  const len = actx.sampleRate * 6, buf = actx.createBuffer(1, len, actx.sampleRate), d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; }
+  const src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
+  windFilter = actx.createBiquadFilter(); windFilter.type = 'bandpass'; windFilter.frequency.value = 400; windFilter.Q.value = 0.5;
+  windGain = actx.createGain(); windGain.gain.value = 0.6;
+  src.connect(windFilter).connect(windGain).connect(muffle); src.start();
+  birdBus = actx.createGain(); birdBus.gain.value = 0.18; birdBus.connect(muffle);
+  scheduleBird();
+}
+function chirp(t, f0, f1, dur, pan) {
+  const o = actx.createOscillator(), g = actx.createGain(), p = actx.createStereoPanner();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  p.pan.value = pan;
+  o.connect(g).connect(p).connect(birdBus);
+  o.start(t); o.stop(t + dur + 0.03);
+}
+function scheduleBird() {
+  if (soundOn && actx.state === 'running') {
+    const t = actx.currentTime + 0.05, pan = Math.random() * 1.8 - 0.9, base = 2600 + Math.random() * 2400;
+    const notes = 5 + Math.floor(Math.random() * 14);
+    let tt = t;
+    for (let i = 0; i < notes; i++) {
+      const dur = 0.04 + Math.random() * 0.07;
+      chirp(tt, base * (0.75 + Math.random() * 0.6), base * (0.8 + Math.random() * 0.7), dur, pan);
+      tt += dur + 0.02 + Math.random() * 0.05;
+    }
+  }
+  setTimeout(scheduleBird, 1200 + Math.random() * 4500);
+}
+function setSound(v) {
+  initAudio();
+  soundOn = v;
+  master.gain.setTargetAtTime(v ? 0.9 : 0, actx.currentTime, 0.3);
+  const b = document.getElementById('sound');
+  b.textContent = v ? 'Дыбысты өшіру' : 'Дыбысты қосу';
+  b.classList.toggle('on', v);
+}
+document.getElementById('sound').onclick = () => setSound(!soundOn);
+vrButton.addEventListener('click', () => { if (!soundOn) setSound(true); else initAudio(); });
+
+let gustT = 0, wasInside = null;
+function updateAudio(dt, camPos) {
+  if (!actx || !soundOn) return;
+  gustT += dt;
+  const inside = inZone(camPos.x, camPos.z) && camPos.y < 3.5;
+  const now = actx.currentTime;
+  const gust = 0.5 + 0.35 * Math.sin(gustT * 0.23) + 0.15 * Math.sin(gustT * 0.71 + 1.3);
+  windFilter.frequency.setTargetAtTime(250 + gust * 500, now, 0.5);
+  const elev = Math.min(1, camPos.y / 14);
+  windGain.gain.setTargetAtTime((inside ? 0.12 : 0.35 + gust * 0.4 + elev * 0.25), now, 0.5);
+  if (inside !== wasInside) {
+    muffle.frequency.setTargetAtTime(inside ? 500 : 18000, now, 0.4);
+    birdBus.gain.setTargetAtTime(inside ? 0.05 : 0.18, now, 0.4);
+    wasInside = inside;
+  }
+}
+
 const tip = document.getElementById('tip');
 const mouse = new THREE.Vector2(), ray = new THREE.Raycaster();
 renderer.domElement.addEventListener('pointermove', e => {
   mouse.set(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1);
   ray.setFromCamera(mouse, camera);
   const hit = ray.intersectObjects(mounds)[0];
-  if (hit) {
+  if (hit && !(hit.object === bigMound && cutaway)) {
     const u = hit.object.userData;
     tip.innerHTML = 'Оба № ' + u.i + '<br>Диаметрі ≈ ' + Math.round(u.d) + ' м<br>Биіктігі ≈ ' + u.h.toFixed(1) + ' м';
     tip.style.display = 'block';
@@ -246,8 +467,9 @@ renderer.domElement.addEventListener('pointermove', e => {
 
 document.getElementById('bird').onclick = () => { camera.position.set(700, 900, 1900); controls.target.set(0, 0, 0); controls.update(); };
 document.getElementById('human').onclick = () => { camera.position.set(-6, 1.7, 135); controls.target.set(0, 7, 0); controls.update(); };
+document.getElementById('inside').onclick = () => { camera.position.set(1.2, 1.6, 2.6); controls.target.set(-0.3, 0.7, -1.6); controls.update(); };
 
-const marker = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.75, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false }));
+const marker = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.6, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false }));
 marker.visible = false;
 scene.add(marker);
 
@@ -255,11 +477,12 @@ const factory = new XRControllerModelFactory();
 const controllers = [];
 for (let i = 0; i < 2; i++) {
   const c = renderer.xr.getController(i);
+  c.userData.prev = [];
   c.addEventListener('connected', e => { c.userData.gamepad = e.data.gamepad; c.userData.hand = e.data.handedness; });
   c.addEventListener('disconnected', () => { c.userData.gamepad = null; });
   c.addEventListener('selectend', () => {
     const p = c.userData.hit;
-    if (p) dolly.position.set(p.x, heightAt(p.x, p.z), p.z);
+    if (p) dolly.position.copy(p);
   });
   const line = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
@@ -274,12 +497,14 @@ for (let i = 0; i < 2; i++) {
   controllers.push(c);
 }
 
+const START = new THREE.Vector3(0, 0, 135);
 const savedCam = new THREE.Vector3(), savedTarget = new THREE.Vector3();
 renderer.xr.addEventListener('sessionstart', () => {
   savedCam.copy(camera.position); savedTarget.copy(controls.target);
   controls.enabled = false;
-  dolly.position.set(0, 0, 135);
+  dolly.position.copy(START);
   dolly.rotation.set(0, 0, 0);
+  if (actx) actx.resume();
 });
 renderer.xr.addEventListener('sessionend', () => {
   dolly.position.set(0, 0, 0);
@@ -289,10 +514,19 @@ renderer.xr.addEventListener('sessionend', () => {
   marker.visible = false;
 });
 
+function pressedOnce(c, idx) {
+  const gp = c.userData.gamepad;
+  const now = !!(gp && gp.buttons[idx] && gp.buttons[idx].pressed);
+  const was = !!c.userData.prev[idx];
+  c.userData.prev[idx] = now;
+  return now && !was;
+}
+
 const tmpM = new THREE.Matrix4(), dir = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-const targets = [ground, plateau, ...mounds];
+const camPos = new THREE.Vector3();
 let turned = false;
 function updateXR(dt) {
+  const targets = [ground, plateau, ...floors, ...blockers, ...(cutaway ? mounds.slice(1) : mounds)];
   let shownMound = null, markerSet = false;
   for (const c of controllers) {
     tmpM.identity().extractRotation(c.matrixWorld);
@@ -300,12 +534,23 @@ function updateXR(dt) {
     ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
     ray.far = 4000;
     const hit = ray.intersectObjects(targets)[0];
-    c.userData.hit = hit ? hit.point.clone() : null;
-    if (hit && !markerSet) { marker.position.copy(hit.point).y += 0.1; markerSet = true; }
+    const ok = hit && !blockers.includes(hit.object);
+    c.userData.hit = ok ? hit.point.clone() : null;
+    if (ok && !markerSet) { marker.position.copy(hit.point).y += 0.05; markerSet = true; }
     if (hit && mounds.includes(hit.object) && !shownMound) shownMound = hit.object;
 
     const gp = c.userData.gamepad;
-    if (!gp || gp.axes.length < 4) continue;
+    if (!gp) continue;
+    if (c.userData.hand === 'left' && pressedOnce(c, 4)) {
+      const insideNow = inZone(dolly.position.x, dolly.position.z) && dolly.position.y < 3;
+      if (insideNow) dolly.position.copy(START); else dolly.position.set(0.8, 0, 2.2);
+      dolly.rotation.set(0, 0, 0);
+    }
+    if (c.userData.hand === 'right') {
+      if (pressedOnce(c, 4)) setCutaway(!cutaway);
+      if (pressedOnce(c, 5)) setSound(!soundOn);
+    }
+    if (gp.axes.length < 4) continue;
     const ax = gp.axes[2], ay = gp.axes[3];
     if (c.userData.hand === 'left') {
       if (Math.abs(ax) > 0.15 || Math.abs(ay) > 0.15) {
@@ -313,9 +558,15 @@ function updateXR(dt) {
         dir.y = 0; dir.normalize();
         right.crossVectors(dir, up).normalize();
         const fast = gp.buttons[1] && gp.buttons[1].pressed;
-        const speed = fast ? 40 : 6;
-        dolly.position.addScaledVector(dir, -ay * speed * dt).addScaledVector(right, ax * speed * dt);
-        dolly.position.y = heightAt(dolly.position.x, dolly.position.z);
+        const inside = inZone(dolly.position.x, dolly.position.z) && dolly.position.y < 3;
+        const speed = inside ? 1.5 : (fast ? 40 : 6);
+        const nx = dolly.position.x + (dir.x * -ay + right.x * ax) * speed * dt;
+        const nz = dolly.position.z + (dir.z * -ay + right.z * ax) * speed * dt;
+        const leaving = inside && !inZone(nx, nz) && Math.hypot(nx, nz) < 49;
+        if (!leaving) {
+          dolly.position.x = nx; dolly.position.z = nz;
+          dolly.position.y = heightAt(nx, nz, dolly.position.y);
+        }
       }
     } else if (c.userData.hand === 'right') {
       if (Math.abs(ax) > 0.7 && !turned) { dolly.rotation.y -= Math.sign(ax) * Math.PI / 6; turned = true; }
@@ -323,17 +574,22 @@ function updateXR(dt) {
     }
   }
   marker.visible = markerSet;
-  showLabel(shownMound);
+  showLabel(cutaway && shownMound === bigMound ? null : shownMound);
 }
 
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
+  const t = clock.elapsedTime;
   if (renderer.xr.isPresenting) updateXR(dt);
   else controls.update();
+  const view = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+  view.getWorldPosition(camPos);
+  torch.intensity = 12 + Math.sin(t * 13) * 1.5 + Math.sin(t * 29) * 1;
+  const insideView = inZone(camPos.x, camPos.z) && camPos.y < 3.5;
+  hemi.intensity += ((insideView ? 0.12 : 0.9) - hemi.intensity) * Math.min(1, dt * 4);
+  updateAudio(dt, camPos);
   if (label.visible) {
-    const camPos = new THREE.Vector3();
-    (renderer.xr.isPresenting ? renderer.xr.getCamera() : camera).getWorldPosition(camPos);
     const s = Math.max(2, camPos.distanceTo(label.position) * 0.08);
     label.scale.set(s, s * 0.375, 1);
   }
