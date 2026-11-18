@@ -12,6 +12,16 @@ html,body{margin:0;height:100%;overflow:hidden;font-family:system-ui,-apple-syst
 #panel button{font:inherit;font-size:13px;border:1px solid rgba(0,0,0,.2);background:#fff;border-radius:8px;padding:5px 10px;margin:6px 6px 0 0;cursor:pointer}
 #panel button.on{background:#e6f1fb;border-color:#378add}
 #panel .muted{color:#6b6a65;font-size:12px}
+#subs{position:absolute;left:50%;bottom:70px;transform:translateX(-50%);max-width:min(760px,90vw);background:rgba(20,20,20,.78);color:#fff;border-radius:10px;padding:10px 16px;font-size:16px;line-height:1.5;display:none;z-index:4;text-align:center}
+#quiz{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:5}
+#quizBox{background:#fff;color:#1f1e1d;border-radius:14px;padding:18px 20px;width:min(560px,92vw);font-size:15px;line-height:1.5}
+#quizBox h2{font-size:18px;font-weight:500;margin:0 0 12px}
+#quizBox .opt{display:block;width:100%;text-align:left;font:inherit;border:1px solid rgba(0,0,0,.18);background:#fff;border-radius:8px;padding:9px 12px;margin:0 0 8px;cursor:pointer}
+#quizBox .opt.ok{background:#eaf3de;border-color:#639922}
+#quizBox .opt.bad{background:#fcebeb;border-color:#e24b4a}
+#quizBox .row{display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:8px}
+#quizBox .row button{font:inherit;border:1px solid rgba(0,0,0,.2);background:#fff;border-radius:8px;padding:6px 12px;cursor:pointer}
+#quizBox .ex{color:#5f5e5a;font-size:14px;margin:6px 0 0}
 #tip{position:absolute;pointer-events:none;background:rgba(255,255,255,.95);border-radius:8px;padding:6px 10px;font-size:12px;display:none;z-index:3;line-height:1.5}
 </style>
 <script type="importmap">
@@ -26,12 +36,15 @@ html,body{margin:0;height:100%;overflow:hidden;font-family:system-ui,-apple-syst
 <p>Нақты масштабтағы сызбалық модель: 47 оба, ~3 км × 800 м, ортадағы ең үлкен оба Ø100 м, биіктігі 14 м.</p>
 <button id="bird">Құс көзімен</button><button id="human">Адам көзімен</button><button id="inside">Обаның ішіне</button>
 <button id="cut">Кесіп көрсету</button><button id="sound">Дыбысты қосу</button>
+<button id="guideBtn" class="on">Аудиогид: қосулы</button><button id="quizBtn">Викторина</button>
 <p class="muted">Компьютерде: тінтуірмен айналдыру, дөңгелекпен жақындату. VR-де: төмендегі «ENTER VR» батырмасы.</p>
-<p class="muted">VR басқару: триггер — телепорт; сол таяқша — жүру (grip — жылдам); оң таяқша — бұрылу; X — обаның ішіне/сыртқа; A — кесіп көрсету; B — дыбыс.</p>
+<p class="muted">VR басқару: триггер — телепорт / таңдау; сол таяқша — жүру (сол grip — жылдам); оң таяқша — бұрылу; grip — затты қолға алу; X — обаның ішіне/сыртқа; Y — викторина; A — кесіп көрсету; B — дыбыс.</p>
 <p class="muted">Ең үлкен обаның оңтүстік етегінде кіреберіс бар — дәлізбен ішке жаяу кіруге болады.</p>
 <p class="muted">Обалардың орны шамамен берілген. Ішкі құрылыс — Жетісу сақ обаларына тән үлгі бойынша жасалған реконструкция, Боралдайдың өз қазба деректері емес.</p>
 </div>
 <div id="tip"></div>
+<div id="subs"></div>
+<div id="quiz"><div id="quizBox"></div></div>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -61,7 +74,7 @@ camera.position.set(700, 900, 1900);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0, 0);
-controls.maxPolarAngle = Math.PI / 2.05;
+controls.maxPolarAngle = Math.PI * 0.6;
 controls.minDistance = 0.5;
 controls.maxDistance = 9000;
 controls.update();
@@ -268,23 +281,53 @@ for (const [x, z] of [[-1.05, -1.2], [1.05, -1.2], [-1.05, -2], [1.05, -2]]) {
 }
 const felt = add(new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.5, 6, 16), new THREE.MeshStandardMaterial({ color: 0x8a2f22, roughness: 1 })), false);
 felt.rotation.z = Math.PI / 2; felt.scale.set(1, 1, 0.7); felt.position.set(0, 0.6, -1.6);
+const artifacts = [];
+function artifact(group, x, y, z, name, info) {
+  group.position.set(x, y, z);
+  group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  group.userData.artifact = { name, info };
+  group.userData.home = { p: group.position.clone(), q: group.quaternion.clone() };
+  interior.add(group);
+  artifacts.push(group);
+  return group;
+}
 const clayMat = new THREE.MeshStandardMaterial({ color: 0xb06a3c, roughness: 0.9 });
 const potProfile = [[0, 0], [0.12, 0], [0.2, 0.08], [0.24, 0.2], [0.2, 0.34], [0.13, 0.4], [0.14, 0.44]].map(p => new THREE.Vector2(p[0], p[1]));
 const potGeo = new THREE.LatheGeometry(potProfile, 24);
+const potInfo = ['Қолдан жасалған қыш құмыра.', 'Обаларға тамақ пен сусын салынған', 'ыдыстар қойылған деп саналады.'];
 for (const [x, z, s] of [[-2.5, -2.5, 1], [-2.1, -2.6, 0.75], [2.5, -2.5, 0.9], [-2.6, 1.8, 1.1]]) {
-  const p = add(new THREE.Mesh(potGeo, clayMat), false);
-  p.scale.setScalar(s * 1.3); p.position.set(x, 0.08, z);
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(potGeo, clayMat);
+  m.scale.setScalar(s * 1.3);
+  g.add(m);
+  artifact(g, x, 0.08, z, 'Қыш ыдыс', potInfo);
 }
-const bronze = new THREE.MeshStandardMaterial({ color: 0x9c6b2e, metalness: 0.7, roughness: 0.45 });
-const bowl = add(new THREE.Mesh(new THREE.LatheGeometry([[0, 0], [0.2, 0.02], [0.38, 0.15], [0.45, 0.35], [0.47, 0.4]].map(p => new THREE.Vector2(p[0], p[1])), 28), bronze), false);
-bowl.material.side = THREE.DoubleSide;
-bowl.position.set(2.1, 0.45, 1.6);
+const bronze = new THREE.MeshStandardMaterial({ color: 0x9c6b2e, metalness: 0.7, roughness: 0.45, side: THREE.DoubleSide });
+const cauldron = new THREE.Group();
+const bowl = new THREE.Mesh(new THREE.LatheGeometry([[0, 0], [0.2, 0.02], [0.38, 0.15], [0.45, 0.35], [0.47, 0.4]].map(p => new THREE.Vector2(p[0], p[1])), 28), bronze);
+bowl.position.y = 0.45;
+cauldron.add(bowl);
 for (let a = 0; a < 3; a++) {
-  const leg = add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.5, 8), bronze), false);
-  leg.position.set(2.1 + Math.cos(a * 2.094) * 0.28, 0.25, 1.6 + Math.sin(a * 2.094) * 0.28);
+  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.5, 8), bronze);
+  leg.position.set(Math.cos(a * 2.094) * 0.28, 0.25, Math.sin(a * 2.094) * 0.28);
+  cauldron.add(leg);
 }
-const bow = add(new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.025, 6, 24, Math.PI * 0.9), woodMat), false);
-bow.rotation.x = -Math.PI / 2; bow.position.set(0.9, 0.48, -1.0);
+artifact(cauldron, 2.1, 0, 1.6, 'Қола қазан', ['Үш аяқты қола қазан. Мұндай қазандар', 'Жетісу сақтарына тән; ас пісіруге және', 'рәсімдерге қолданылған деп саналады.']);
+const bowG = new THREE.Group();
+const bowArc = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.025, 6, 24, Math.PI * 0.9), woodMat);
+bowG.add(bowArc);
+const string = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1.08, 4), new THREE.MeshStandardMaterial({ color: 0xd8cfb8 }));
+string.rotation.z = Math.PI / 2 - 0.08; string.position.set(0.02, 0.09, 0);
+bowG.add(string);
+bowG.rotation.x = -Math.PI / 2;
+artifact(bowG, 0.9, 0.48, -1.0, 'Садақ', ['Сақтар — шебер садақшы, атты жауынгерлер.', 'Жауынгерді қару-жарағымен бірге', 'жерлеу дәстүрі болған.']);
+const akinak = new THREE.Group();
+const steel = new THREE.MeshStandardMaterial({ color: 0x8c8f93, metalness: 0.8, roughness: 0.4 });
+const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.32), steel); blade.position.z = -0.2; akinak.add(blade);
+const crossGuard = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.03), bronze); crossGuard.position.z = -0.03; akinak.add(crossGuard);
+const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.12, 8), woodMat); hilt.rotation.x = Math.PI / 2; hilt.position.z = 0.04; akinak.add(hilt);
+const pommel = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.03, 0.03), bronze); pommel.position.z = 0.11; akinak.add(pommel);
+artifact(akinak, -0.7, 0.44, -1.05, 'Ақинақ', ['Ақинақ — сақ-скиф жауынгерлеріне тән', 'қысқа семсер-қанжар.']);
 
 const torch = new THREE.PointLight(0xffa04a, 14, 14, 2);
 torch.position.set(-2.4, 2.0, 2.4);
@@ -433,6 +476,263 @@ function setSound(v) {
 document.getElementById('sound').onclick = () => setSound(!soundOn);
 vrButton.addEventListener('click', () => { if (!soundOn) setSound(true); else initAudio(); });
 
+function wrapText(g, text, maxW) {
+  const words = text.split(' '), lines = [];
+  let line = '';
+  for (const w of words) {
+    const t = line ? line + ' ' + w : w;
+    if (g.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+const GUIDE = [
+  { id: 1, cond: p => Math.hypot(p.x - START.x, p.z - START.z) < 15 && p.y < 4, title: 'Қош келдіңіз',
+    text: 'Сәлеметсіз бе! Боралдай сақ қорғандарына қош келдіңіз. Бұл қорым Алматының солтүстік-батысында, Боралдай мен Үлкен Алматы өзендерінің арасындағы үстіртте орналасқан. Аумағы 430 гектар, мұнда 47 оба бар. Обалар ерте темір дәуіріне жатады және сақ тайпаларымен байланысты. Алдыңызда қорымның ең үлкен обасы тұр. Оның оңтүстік етегіндегі кіреберіске барыңыз.' },
+  { id: 2, cond: p => Math.abs(p.x) < 6 && p.z > COR_END - 1 && p.z < COR_END + 8 && p.y < 4, title: 'Кіреберіс',
+    text: 'Бұл — ең үлкен обаның кіреберісі. Обаның диаметрі шамамен 100 метр, биіктігі 14 метр. Ескерте кетейік: Боралдай обалары әлі толық қазылмаған. Сондықтан ішкі құрылыс Жетісудағы басқа сақ обаларына тән үлгі бойынша жасалған реконструкция. Дәлізбен ортадағы камераға өтіңіз.' },
+  { id: 3, cond: p => Math.abs(p.x) < COR_W + 0.5 && p.z > 20 && p.z < 32 && p.y < 3, title: 'Дромос',
+    text: 'Сіз ұзын кіреберіс дәлізде, яғни дромоста келе жатырсыз. Жетісудағы кейбір ірі сақ обаларында, мысалы Бесшатырда, осындай жерасты жолдары мен бөрене құрылыстар табылған.' },
+  { id: 4, cond: p => Math.abs(p.x) < CH && Math.abs(p.z) < CH && p.y < 3, title: 'Жерлеу камерасы',
+    text: 'Сіз жерлеу камерасындасыз. Камера шыршадан қиылған бөренелерден салынған. Ортада киізбен жабылған ағаш төсек, айналасында қыш ыдыстар, қола қазан, садақ пен ақинақ. Grip батырмасымен оларды қолға алып қарай аласыз. Ғалымдардың болжауынша, Боралдай обаларына сақ және үйсін ақсүйектері жерленген. Кейбір зерттеушілер обалар ерте заманда-ақ тоналған болуы мүмкін деп есептейді.' },
+  { id: 5, cond: p => Math.hypot(p.x, p.z) < 25 && p.y > 9, title: 'Обаның басы',
+    text: 'Сіз ең үлкен обаның басындасыз. Кейбір мамандар мұндай обаларды көшпелілердің пирамидалары деп атайды. Оларды тастан емес, балшық аралас шымнан үйген. Ежелгі адамдар обаларды Көкпен байланысатын қасиетті биік орын ретінде қастерлеген деген пікір бар.' },
+  { id: 6, cond: p => Math.hypot(p.x - data[1].x, p.z - data[1].z) < data[1].d / 2 + 15, title: 'Обалар тізбегі',
+    text: 'Бұл — қорымдағы ірі обалардың бірі. Мұндай обалардың биіктігі 5–6 метр, диаметрі 60–80 метрге жетеді. Боралдай обалары оңтүстіктен солтүстікке және оңтүстік-батыстан солтүстік-шығысқа созылған тізбектер болып орналасқан.' },
+  { id: 7, cond: p => Math.hypot(p.x - data[4].x, p.z - data[4].z) < data[4].d / 2 + 15, title: 'Зерттелу тарихы',
+    text: 'Кешенді 1956 жылы археолог Агеева алғаш рет ғылыми сипаттап, тіркеген. 2005 жылы мұнда Марғұлан атындағы Археология институтының экспедициясы жұмыс істеді. 2006 жылы қорым аумағы ашық аспан астындағы мұражай жасау үшін Алматы қаласы тарихы мұражайына берілді. Қорым Қазақстанның қасиетті жерлері тізіміне енген.' }
+];
+let guideOn = true, guideBusy = false, guideTimer = null, guideAudio = null;
+const played = new Set();
+const subsDiv = document.getElementById('subs');
+const subCanvas = document.createElement('canvas');
+subCanvas.width = 1024; subCanvas.height = 300;
+const subTex = new THREE.CanvasTexture(subCanvas);
+subTex.colorSpace = THREE.SRGBColorSpace;
+const subMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.293), new THREE.MeshBasicMaterial({ map: subTex, transparent: true, depthTest: false, fog: false }));
+subMesh.renderOrder = 20;
+subMesh.position.set(0, -0.32, -1.2);
+subMesh.visible = false;
+camera.add(subMesh);
+function showSub(title, text) {
+  if (!text) { subsDiv.style.display = 'none'; subMesh.visible = false; return; }
+  subsDiv.textContent = text;
+  subsDiv.style.display = renderer.xr.isPresenting ? 'none' : 'block';
+  const g = subCanvas.getContext('2d');
+  g.clearRect(0, 0, 1024, 300);
+  g.fillStyle = 'rgba(20,20,20,0.82)';
+  g.beginPath(); g.roundRect(0, 0, 1024, 300, 26); g.fill();
+  g.fillStyle = '#f5c97a'; g.font = '500 30px system-ui, sans-serif'; g.fillText(title, 36, 52);
+  g.fillStyle = '#ffffff'; g.font = '32px system-ui, sans-serif';
+  wrapText(g, text, 950).slice(0, 5).forEach((l, i) => g.fillText(l, 36, 104 + i * 44));
+  subTex.needsUpdate = true;
+  subMesh.visible = renderer.xr.isPresenting;
+}
+function stopGuide() {
+  clearTimeout(guideTimer);
+  if (guideAudio) { guideAudio.pause(); guideAudio = null; }
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  showSub(null);
+  guideBusy = false;
+  if (actx && soundOn) master.gain.setTargetAtTime(0.9, actx.currentTime, 0.4);
+}
+function playGuide(pt) {
+  guideBusy = true;
+  played.add(pt.id);
+  if (actx && soundOn) master.gain.setTargetAtTime(0.3, actx.currentTime, 0.4);
+  const parts = pt.text.match(/[^.!?]+[.!?]+/g) || [pt.text];
+  let started = false;
+  const run = (audio) => {
+    if (started) return; started = true;
+    let total = parts.reduce((s, x) => s + Math.max(2.8, x.length * 0.07), 0);
+    if (audio && isFinite(audio.duration) && audio.duration > 1) total = audio.duration;
+    else if (!audio && window.speechSynthesis) {
+      const kk = speechSynthesis.getVoices().find(v => /^kk/i.test(v.lang));
+      if (kk) { const u = new SpeechSynthesisUtterance(pt.text); u.voice = kk; u.lang = kk.lang; speechSynthesis.speak(u); }
+    }
+    const chars = parts.reduce((s, x) => s + x.length, 0);
+    let i = 0;
+    const next = () => {
+      if (i >= parts.length) { stopGuide(); return; }
+      const part = parts[i++].trim();
+      showSub(pt.title, part);
+      guideTimer = setTimeout(next, total * (part.length / chars) * 1000 + 250);
+    };
+    next();
+  };
+  guideAudio = new Audio('audio/guide' + pt.id + '.mp3');
+  guideAudio.onerror = () => run(null);
+  guideAudio.play().then(() => {
+    if (isFinite(guideAudio.duration)) run(guideAudio);
+    else guideAudio.addEventListener('loadedmetadata', () => run(guideAudio), { once: true });
+  }).catch(() => run(null));
+  setTimeout(() => run(null), 2500);
+}
+let currentPt = null;
+function checkGuide(p) {
+  if (!guideOn) return;
+  const nextPt = GUIDE.find(pt => !played.has(pt.id) && pt.cond(p));
+  if (!nextPt) return;
+  if (guideBusy) {
+    if (currentPt && !currentPt.cond(p)) stopGuide(); else return;
+  }
+  currentPt = nextPt;
+  playGuide(nextPt);
+}
+document.getElementById('guideBtn').onclick = (e) => {
+  guideOn = !guideOn;
+  if (!guideOn) stopGuide(); else played.clear();
+  e.target.textContent = guideOn ? 'Аудиогид: қосулы' : 'Аудиогид: өшірулі';
+  e.target.classList.toggle('on', guideOn);
+};
+
+const QUIZ = [
+  { q: 'Боралдай қорымында неше оба бар?', o: ['12', '47', '100', '250'], a: 1, ex: 'Қорымда 47 оба бар.' },
+  { q: 'Қорымның аумағы қанша?', o: ['43 гектар', '430 гектар', '4300 гектар', '4 гектар'], a: 1, ex: 'Қорым 430 гектар аумақты алып жатыр.' },
+  { q: 'Ең үлкен обаның биіктігі шамамен қанша?', o: ['5 метр', '14 метр', '30 метр', '50 метр'], a: 1, ex: 'Ең үлкен обаның биіктігі — 14 метр, диаметрі — шамамен 100 метр.' },
+  { q: 'Боралдай обалары қай дәуірге жатады?', o: ['Тас дәуірі', 'Қола дәуірінің басы', 'Ерте темір дәуірі', 'Орта ғасыр'], a: 2, ex: 'Обалар ерте темір дәуіріне жатады және сақ тайпаларымен байланысты.' },
+  { q: 'Ғалымдардың пікірінше, бұл обаларға кімдер жерленген?', o: ['Қарапайым егіншілер', 'Сақ және үйсін ақсүйектері', 'Моңғол хандары', 'Саудагерлер'], a: 1, ex: 'Обалар сақ және үйсін ақсүйектерінің жерленген орны деп саналады.' },
+  { q: 'Кейбір мамандар мұндай ірі обаларды не деп атайды?', o: ['Дала қорғандары', 'Көшпелілердің пирамидалары', 'Тас мүсіндер', 'Ханның сарайы'], a: 1, ex: 'Құрылысы ұқсас болғандықтан «көшпелілердің пирамидалары» деп атайды, бірақ тастың орнына балшық аралас шым қолданылған.' },
+  { q: 'Қорым аумағы қай жылы Алматы қаласы тарихы мұражайына берілді?', o: ['1956', '1990', '2006', '2020'], a: 2, ex: '2006 жылы әкім қаулысымен ашық аспан астындағы мұражай жасау үшін берілді.' },
+  { q: 'Ақинақ дегеніміз не?', o: ['Қола қазан', 'Қысқа семсер-қанжар', 'Киіз үйдің бөлігі', 'Ат әбзелі'], a: 1, ex: 'Ақинақ — сақ-скиф жауынгерлеріне тән қысқа семсер-қанжар.' }
+];
+const quiz = { open: false, i: 0, score: 0, picked: null, done: false };
+const quizDiv = document.getElementById('quiz'), quizBox = document.getElementById('quizBox');
+const QW = 1024, QH = 900;
+const quizCanvas = document.createElement('canvas');
+quizCanvas.width = QW; quizCanvas.height = QH;
+const quizTex = new THREE.CanvasTexture(quizCanvas);
+quizTex.colorSpace = THREE.SRGBColorSpace;
+const quizMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2 * QH / QW), new THREE.MeshBasicMaterial({ map: quizTex, transparent: true, fog: false }));
+quizMesh.visible = false;
+scene.add(quizMesh);
+const R = { opt: i => [60, 230 + i * 105, 904, 88], next: [690, 790, 274, 80], close: [930, 24, 70, 70] };
+function drawQuiz() {
+  const g = quizCanvas.getContext('2d');
+  g.clearRect(0, 0, QW, QH);
+  g.fillStyle = 'rgba(255,255,255,0.97)'; g.beginPath(); g.roundRect(0, 0, QW, QH, 30); g.fill();
+  g.fillStyle = '#1f1e1d';
+  g.font = '40px system-ui, sans-serif'; g.fillText('×', 950, 72);
+  if (quiz.done) {
+    g.font = '500 48px system-ui, sans-serif'; g.fillText('Викторина аяқталды!', 60, 200);
+    g.font = '40px system-ui, sans-serif'; g.fillText('Нәтиже: ' + quiz.score + ' / ' + QUIZ.length, 60, 300);
+    const msg = quiz.score === QUIZ.length ? 'Керемет! Барлық жауап дұрыс.' : quiz.score >= QUIZ.length / 2 ? 'Жақсы нәтиже!' : 'Аудиогидті тыңдап, қайта көріңіз.';
+    g.fillText(msg, 60, 380);
+  } else {
+    const Q = QUIZ[quiz.i];
+    g.fillStyle = '#6b6a65'; g.font = '30px system-ui, sans-serif'; g.fillText('Сұрақ ' + (quiz.i + 1) + ' / ' + QUIZ.length + '   ·   Ұпай: ' + quiz.score, 60, 70);
+    g.fillStyle = '#1f1e1d'; g.font = '500 40px system-ui, sans-serif';
+    wrapText(g, Q.q, 880).slice(0, 2).forEach((l, i) => g.fillText(l, 60, 140 + i * 50));
+    Q.o.forEach((o, i) => {
+      const [x, y, w, h] = R.opt(i);
+      let fill = '#ffffff', stroke = 'rgba(0,0,0,0.25)';
+      if (quiz.picked !== null) {
+        if (i === Q.a) { fill = '#eaf3de'; stroke = '#639922'; }
+        else if (i === quiz.picked) { fill = '#fcebeb'; stroke = '#e24b4a'; }
+      }
+      g.fillStyle = fill; g.strokeStyle = stroke; g.lineWidth = 3;
+      g.beginPath(); g.roundRect(x, y, w, h, 16); g.fill(); g.stroke();
+      g.fillStyle = '#1f1e1d'; g.font = '36px system-ui, sans-serif'; g.fillText(o, x + 30, y + 56);
+    });
+    if (quiz.picked !== null) {
+      g.fillStyle = '#444441'; g.font = '30px system-ui, sans-serif';
+      wrapText(g, Q.ex, 600).slice(0, 3).forEach((l, i) => g.fillText(l, 60, 690 + i * 40 + (i ? 0 : 0) + 100 - 100));
+    }
+  }
+  if (quiz.done || quiz.picked !== null) {
+    const [x, y, w, h] = R.next;
+    g.fillStyle = '#185fa5'; g.beginPath(); g.roundRect(x, y, w, h, 16); g.fill();
+    g.fillStyle = '#ffffff'; g.font = '500 34px system-ui, sans-serif';
+    g.fillText(quiz.done ? 'Қайта бастау' : (quiz.i === QUIZ.length - 1 ? 'Нәтиже' : 'Келесі →'), x + 28, y + 52);
+  }
+  quizTex.needsUpdate = true;
+}
+function renderQuizHTML() {
+  if (quiz.done) {
+    quizBox.innerHTML = '<h2>Викторина аяқталды!</h2><p>Нәтиже: <b>' + quiz.score + ' / ' + QUIZ.length + '</b></p><div class="row"><button data-act="close">Жабу</button><button data-act="next">Қайта бастау</button></div>';
+  } else {
+    const Q = QUIZ[quiz.i];
+    let h = '<div style="color:#6b6a65;font-size:13px">Сұрақ ' + (quiz.i + 1) + ' / ' + QUIZ.length + ' · Ұпай: ' + quiz.score + '</div><h2>' + Q.q + '</h2>';
+    Q.o.forEach((o, i) => {
+      let cls = 'opt';
+      if (quiz.picked !== null) { if (i === Q.a) cls += ' ok'; else if (i === quiz.picked) cls += ' bad'; }
+      h += '<button class="' + cls + '" data-opt="' + i + '">' + o + '</button>';
+    });
+    if (quiz.picked !== null) h += '<p class="ex">' + Q.ex + '</p>';
+    h += '<div class="row"><button data-act="close">Жабу</button>' + (quiz.picked !== null ? '<button data-act="next">' + (quiz.i === QUIZ.length - 1 ? 'Нәтиже' : 'Келесі →') + '</button>' : '') + '</div>';
+    quizBox.innerHTML = h;
+  }
+}
+function quizRender() { drawQuiz(); renderQuizHTML(); }
+function quizPick(i) {
+  if (quiz.done || quiz.picked !== null) return;
+  quiz.picked = i;
+  if (i === QUIZ[quiz.i].a) quiz.score++;
+  quizRender();
+}
+function quizNext() {
+  if (quiz.done) { Object.assign(quiz, { i: 0, score: 0, picked: null, done: false }); }
+  else if (quiz.picked !== null) { if (quiz.i === QUIZ.length - 1) quiz.done = true; else { quiz.i++; quiz.picked = null; } }
+  quizRender();
+}
+function openQuiz(v) {
+  quiz.open = v;
+  if (v) {
+    if (quiz.done) Object.assign(quiz, { i: 0, score: 0, picked: null, done: false });
+    quizRender();
+    if (renderer.xr.isPresenting) {
+      const xc = renderer.xr.getCamera();
+      const pos = new THREE.Vector3(), d = new THREE.Vector3();
+      xc.getWorldPosition(pos); xc.getWorldDirection(d); d.y = 0; d.normalize();
+      quizMesh.position.copy(pos).addScaledVector(d, 1.5); quizMesh.position.y = pos.y - 0.1;
+      quizMesh.lookAt(pos.x, quizMesh.position.y, pos.z);
+      quizMesh.visible = true;
+    } else quizDiv.style.display = 'flex';
+  } else { quizMesh.visible = false; quizDiv.style.display = 'none'; }
+}
+quizBox.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.opt !== undefined) quizPick(+b.dataset.opt);
+  else if (b.dataset.act === 'next') quizNext();
+  else if (b.dataset.act === 'close') openQuiz(false);
+});
+document.getElementById('quizBtn').onclick = () => openQuiz(true);
+function quizClickUV(uv) {
+  const x = uv.x * QW, y = (1 - uv.y) * QH;
+  const inR = r => x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3];
+  if (inR(R.close)) { openQuiz(false); return; }
+  if ((quiz.done || quiz.picked !== null) && inR(R.next)) { quizNext(); return; }
+  if (!quiz.done) for (let i = 0; i < 4; i++) if (inR(R.opt(i))) { quizPick(i); return; }
+}
+
+function artifactRoot(o) { while (o && !o.userData.artifact) o = o.parent; return o; }
+function makeInfoPanel(a) {
+  const lines = [a.name, ...a.info];
+  return canvasPlane(lines, 900, 120 + (lines.length - 1) * 48 + 30, 0.00035);
+}
+function grab(c, obj) {
+  if (c.userData.held) return;
+  for (const o of controllers) if (o.userData.held === obj) return;
+  c.attach(obj);
+  obj.position.set(0, 0, -0.25);
+  c.userData.held = obj;
+  const panel = makeInfoPanel(obj.userData.artifact);
+  panel.position.set(0, 0.22, -0.3);
+  panel.material.depthTest = false; panel.renderOrder = 15;
+  c.add(panel);
+  c.userData.panel = panel;
+}
+function release(c) {
+  const obj = c.userData.held;
+  if (!obj) return;
+  interior.add(obj);
+  obj.position.copy(obj.userData.home.p);
+  obj.quaternion.copy(obj.userData.home.q);
+  c.userData.held = null;
+  if (c.userData.panel) { c.remove(c.userData.panel); c.userData.panel.material.map.dispose(); c.userData.panel = null; }
+}
+
 let gustT = 0, wasInside = null;
 function updateAudio(dt, camPos) {
   if (!actx || !soundOn) return;
@@ -455,6 +755,15 @@ const mouse = new THREE.Vector2(), ray = new THREE.Raycaster();
 renderer.domElement.addEventListener('pointermove', e => {
   mouse.set(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1);
   ray.setFromCamera(mouse, camera);
+  const ah = ray.intersectObjects(artifacts, true)[0];
+  if (ah && ah.distance < 15) {
+    const a = artifactRoot(ah.object).userData.artifact;
+    tip.innerHTML = '<b>' + a.name + '</b><br>' + a.info.join(' ');
+    tip.style.display = 'block'; tip.style.maxWidth = '260px';
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - 280) + 'px';
+    tip.style.top = (e.clientY + 14) + 'px';
+    return;
+  }
   const hit = ray.intersectObjects(mounds)[0];
   if (hit && !(hit.object === bigMound && cutaway)) {
     const u = hit.object.userData;
@@ -481,9 +790,13 @@ for (let i = 0; i < 2; i++) {
   c.addEventListener('connected', e => { c.userData.gamepad = e.data.gamepad; c.userData.hand = e.data.handedness; });
   c.addEventListener('disconnected', () => { c.userData.gamepad = null; });
   c.addEventListener('selectend', () => {
+    if (c.userData.quizUV) { quizClickUV(c.userData.quizUV); return; }
+    if (c.userData.held) return;
     const p = c.userData.hit;
     if (p) dolly.position.copy(p);
   });
+  c.addEventListener('squeezestart', () => { if (c.userData.artHit) grab(c, c.userData.artHit); });
+  c.addEventListener('squeezeend', () => release(c));
   const line = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
     new THREE.LineBasicMaterial({ color: 0xffffff })
@@ -505,6 +818,8 @@ renderer.xr.addEventListener('sessionstart', () => {
   dolly.position.copy(START);
   dolly.rotation.set(0, 0, 0);
   if (actx) actx.resume();
+  if (quiz.open) openQuiz(false);
+  showSub(null);
 });
 renderer.xr.addEventListener('sessionend', () => {
   dolly.position.set(0, 0, 0);
@@ -512,6 +827,9 @@ renderer.xr.addEventListener('sessionend', () => {
   camera.position.copy(savedCam); controls.target.copy(savedTarget);
   controls.enabled = true; controls.update();
   marker.visible = false;
+  controllers.forEach(release);
+  quizMesh.visible = false; quiz.open = false;
+  showSub(null);
 });
 
 function pressedOnce(c, idx) {
@@ -527,6 +845,7 @@ const camPos = new THREE.Vector3();
 let turned = false;
 function updateXR(dt) {
   const targets = [ground, plateau, ...floors, ...blockers, ...(cutaway ? mounds.slice(1) : mounds)];
+  if (quizMesh.visible) targets.push(quizMesh);
   let shownMound = null, markerSet = false;
   for (const c of controllers) {
     tmpM.identity().extractRotation(c.matrixWorld);
@@ -534,13 +853,20 @@ function updateXR(dt) {
     ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
     ray.far = 4000;
     const hit = ray.intersectObjects(targets)[0];
-    const ok = hit && !blockers.includes(hit.object);
+    c.userData.quizUV = hit && hit.object === quizMesh ? hit.uv.clone() : null;
+    c.userData.artHit = null;
+    if (!c.userData.held) {
+      const ah = ray.intersectObjects(artifacts, true)[0];
+      if (ah && ah.distance < 4 && (!hit || ah.distance <= hit.distance + 0.01)) c.userData.artHit = artifactRoot(ah.object);
+    }
+    const ok = hit && !blockers.includes(hit.object) && hit.object !== quizMesh && !c.userData.artHit;
     c.userData.hit = ok ? hit.point.clone() : null;
     if (ok && !markerSet) { marker.position.copy(hit.point).y += 0.05; markerSet = true; }
     if (hit && mounds.includes(hit.object) && !shownMound) shownMound = hit.object;
 
     const gp = c.userData.gamepad;
     if (!gp) continue;
+    if (c.userData.hand === 'left' && pressedOnce(c, 5)) openQuiz(!quiz.open);
     if (c.userData.hand === 'left' && pressedOnce(c, 4)) {
       const insideNow = inZone(dolly.position.x, dolly.position.z) && dolly.position.y < 3;
       if (insideNow) dolly.position.copy(START); else dolly.position.set(0.8, 0, 2.2);
@@ -557,7 +883,7 @@ function updateXR(dt) {
         renderer.xr.getCamera().getWorldDirection(dir);
         dir.y = 0; dir.normalize();
         right.crossVectors(dir, up).normalize();
-        const fast = gp.buttons[1] && gp.buttons[1].pressed;
+        const fast = gp.buttons[1] && gp.buttons[1].pressed && !c.userData.held;
         const inside = inZone(dolly.position.x, dolly.position.z) && dolly.position.y < 3;
         const speed = inside ? 1.5 : (fast ? 40 : 6);
         const nx = dolly.position.x + (dir.x * -ay + right.x * ax) * speed * dt;
@@ -582,13 +908,14 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   const t = clock.elapsedTime;
   if (renderer.xr.isPresenting) updateXR(dt);
-  else controls.update();
+  else { controls.update(); if (camera.position.y < 1.2) camera.position.y = 1.2; }
   const view = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
   view.getWorldPosition(camPos);
   torch.intensity = 12 + Math.sin(t * 13) * 1.5 + Math.sin(t * 29) * 1;
   const insideView = inZone(camPos.x, camPos.z) && camPos.y < 3.5;
   hemi.intensity += ((insideView ? 0.12 : 0.9) - hemi.intensity) * Math.min(1, dt * 4);
   updateAudio(dt, camPos);
+  checkGuide(camPos);
   if (label.visible) {
     const s = Math.max(2, camPos.distanceTo(label.position) * 0.08);
     label.scale.set(s, s * 0.375, 1);
