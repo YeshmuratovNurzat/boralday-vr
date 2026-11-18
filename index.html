@@ -22,6 +22,9 @@ html,body{margin:0;height:100%;overflow:hidden;font-family:system-ui,-apple-syst
 #quizBox .row{display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:8px}
 #quizBox .row button{font:inherit;border:1px solid rgba(0,0,0,.2);background:#fff;border-radius:8px;padding:6px 12px;cursor:pointer}
 #quizBox .ex{color:#5f5e5a;font-size:14px;margin:6px 0 0}
+#build{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:8px;background:rgba(255,255,255,.95);border-radius:12px;padding:8px 10px;z-index:4;font-size:14px;color:#1f1e1d}
+#build button{font:inherit;font-size:14px;border:1px solid rgba(0,0,0,.2);background:#fff;border-radius:8px;padding:5px 10px;cursor:pointer}
+#buildStage{min-width:48px;text-align:center}
 #tip{position:absolute;pointer-events:none;background:rgba(255,255,255,.95);border-radius:8px;padding:6px 10px;font-size:12px;display:none;z-index:3;line-height:1.5}
 </style>
 <script type="importmap">
@@ -37,13 +40,15 @@ html,body{margin:0;height:100%;overflow:hidden;font-family:system-ui,-apple-syst
 <button id="bird">Құс көзімен</button><button id="human">Адам көзімен</button><button id="inside">Обаның ішіне</button>
 <button id="cut">Кесіп көрсету</button><button id="sound">Дыбысты қосу</button>
 <button id="guideBtn" class="on">Аудиогид: қосулы</button><button id="quizBtn">Викторина</button>
+<button id="buildBtn">Құрылыс кезеңдері</button>
 <p class="muted">Компьютерде: тінтуірмен айналдыру, дөңгелекпен жақындату. VR-де: төмендегі «ENTER VR» батырмасы.</p>
-<p class="muted">VR басқару: триггер — телепорт / таңдау; сол таяқша — жүру (сол grip — жылдам); оң таяқша — бұрылу; grip — затты қолға алу; X — обаның ішіне/сыртқа; Y — викторина; A — кесіп көрсету; B — дыбыс.</p>
+<p class="muted">VR басқару: триггер — телепорт / таңдау; сол таяқша — жүру (сол grip — жылдам); оң таяқша — бұрылу; grip — затты қолға алу; X — обаның ішіне/сыртқа; Y — викторина; A — кесіп көрсету; B — дыбыс; оң таяқшаны басу — құрылыс кезеңдері (келесі кезең); сол таяқшаны басу — құрылыстан шығу.</p>
 <p class="muted">Ең үлкен обаның оңтүстік етегінде кіреберіс бар — дәлізбен ішке жаяу кіруге болады.</p>
 <p class="muted">Обалардың орны шамамен берілген. Ішкі құрылыс — Жетісу сақ обаларына тән үлгі бойынша жасалған реконструкция, Боралдайдың өз қазба деректері емес.</p>
 </div>
 <div id="tip"></div>
 <div id="subs"></div>
+<div id="build"><button data-b="prev" aria-label="Алдыңғы кезең">◀</button><span id="buildStage">1 / 7</span><button data-b="play" id="buildPlay">⏸ Тоқтату</button><button data-b="next" aria-label="Келесі кезең">▶</button><button data-b="exit">Шығу</button></div>
 <div id="quiz"><div id="quizBox"></div></div>
 <script type="module">
 import * as THREE from 'three';
@@ -120,7 +125,7 @@ scene.add(ground);
 
 const plateauTex = noiseTex('#b7ad86', 0.45, 9000);
 plateauTex.repeat.set(40, 150);
-const plateau = new THREE.Mesh(new THREE.PlaneGeometry(840, 3060), new THREE.MeshLambertMaterial({ map: plateauTex }));
+const plateau = new THREE.Mesh(new THREE.PlaneGeometry(840, 3060), new THREE.MeshLambertMaterial({ map: plateauTex, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
 plateau.rotation.x = -Math.PI / 2;
 plateau.position.y = 0.05;
 plateau.receiveShadow = true;
@@ -195,6 +200,7 @@ const mounds = data.map((o, i) => {
   return m;
 });
 const bigMound = mounds[0];
+const normalMoundMat = bigMound.material;
 
 const CH = 3.2, CH_H = 2.5, COR_W = 0.75, COR_END = 49.6, COR_H = 2.1;
 function inZone(x, z) {
@@ -216,6 +222,7 @@ const woodMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.95 }
 const earthTex = noiseTex('#6e5a3e', 0.5, 6000);
 earthTex.repeat.set(4, 4);
 const earthMat = new THREE.MeshStandardMaterial({ map: earthTex, roughness: 1 });
+const floorMat = new THREE.MeshStandardMaterial({ map: earthTex, roughness: 1, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -12 });
 const interior = new THREE.Group();
 scene.add(interior);
 const blockers = [];
@@ -246,10 +253,13 @@ for (let i = 0; i < layers; i++) {
   log(seg, 'x', COR_W + seg / 2, y, CH);
   if (y > COR_H) log(COR_W * 2, 'x', 0, y, CH);
 }
+const wallLogs = blockers.slice();
+const roofStart = blockers.length;
 for (let z = -CH - 0.16; z <= CH + 0.17; z += 0.3) log(CH * 2 + 0.6, 'x', 0, CH_H, z);
+const roofLogs = blockers.slice(roofStart);
 const lid = add(new THREE.Mesh(new THREE.BoxGeometry(CH * 2 + 0.8, 0.3, CH * 2 + 0.8), earthMat), true);
 lid.position.y = CH_H + 0.3;
-const chFloor = add(new THREE.Mesh(new THREE.PlaneGeometry(CH * 2, CH * 2), earthMat), false);
+const chFloor = add(new THREE.Mesh(new THREE.PlaneGeometry(CH * 2, CH * 2), floorMat), false);
 chFloor.rotation.x = -Math.PI / 2; chFloor.position.y = 0.08; floors.push(chFloor);
 
 const corLen = COR_END - CH;
@@ -257,30 +267,41 @@ const corMid = CH + corLen / 2;
 const plankTex = noiseTex('#6b4a2b', 0.35, 4000, true);
 plankTex.rotation = Math.PI / 2; plankTex.repeat.set(corLen / 2, 1);
 const plankMat = new THREE.MeshStandardMaterial({ map: plankTex, roughness: 0.95 });
+const corridorParts = [];
 [-COR_W - 0.1, COR_W + 0.1].forEach(x => {
   const w = add(new THREE.Mesh(new THREE.BoxGeometry(0.2, COR_H, corLen), plankMat), true);
   w.position.set(x, COR_H / 2, corMid);
+  corridorParts.push(w);
 });
 const roof = add(new THREE.Mesh(new THREE.BoxGeometry(COR_W * 2 + 0.4, 0.2, corLen), plankMat), true);
 roof.position.set(0, COR_H + 0.1, corMid);
-const corFloor = add(new THREE.Mesh(new THREE.PlaneGeometry(COR_W * 2, corLen), earthMat), false);
+corridorParts.push(roof);
+const corFloor = add(new THREE.Mesh(new THREE.PlaneGeometry(COR_W * 2, corLen), floorMat), false);
 corFloor.rotation.x = -Math.PI / 2; corFloor.position.set(0, 0.08, corMid); floors.push(corFloor);
+corridorParts.push(corFloor);
+const portalParts = [];
 const stoneMat = new THREE.MeshStandardMaterial({ color: 0x8a857a, roughness: 1, flatShading: true });
 [-COR_W - 0.35, COR_W + 0.35].forEach(x => {
   const p = add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.6, 0.5), stoneMat), true);
   p.position.set(x, 1.3, COR_END + 0.3);
+  portalParts.push(p);
 });
 const lintel = add(new THREE.Mesh(new THREE.BoxGeometry(COR_W * 2 + 1.3, 0.45, 0.6), stoneMat), true);
 lintel.position.set(0, 2.75, COR_END + 0.3);
+portalParts.push(lintel);
 
+const burialParts = [];
 const bed = add(new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.35, 1.0), woodMat), false);
+burialParts.push(bed);
 bed.position.set(0, 0.25, -1.6);
 for (const [x, z] of [[-1.05, -1.2], [1.05, -1.2], [-1.05, -2], [1.05, -2]]) {
   const leg = add(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.12), woodMat), false);
   leg.position.set(x, 0.05, z);
+  burialParts.push(leg);
 }
 const felt = add(new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.5, 6, 16), new THREE.MeshStandardMaterial({ color: 0x8a2f22, roughness: 1 })), false);
 felt.rotation.z = Math.PI / 2; felt.scale.set(1, 1, 0.7); felt.position.set(0, 0.6, -1.6);
+burialParts.push(felt);
 const artifacts = [];
 function artifact(group, x, y, z, name, info) {
   group.position.set(x, y, z);
@@ -419,7 +440,7 @@ function showLabel(m) {
 let cutaway = false;
 function setCutaway(v) {
   cutaway = v;
-  const m = bigMound.material;
+  const m = normalMoundMat;
   m.transparent = v; m.opacity = v ? 0.22 : 1; m.depthWrite = !v; m.needsUpdate = true;
   bigMound.castShadow = !v;
   document.getElementById('cut').classList.toggle('on', v);
@@ -791,7 +812,7 @@ for (let i = 0; i < 2; i++) {
   c.addEventListener('disconnected', () => { c.userData.gamepad = null; });
   c.addEventListener('selectend', () => {
     if (c.userData.quizUV) { quizClickUV(c.userData.quizUV); return; }
-    if (c.userData.held) return;
+    if (c.userData.held || build.on) return;
     const p = c.userData.hit;
     if (p) dolly.position.copy(p);
   });
@@ -819,6 +840,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   dolly.rotation.set(0, 0, 0);
   if (actx) actx.resume();
   if (quiz.open) openQuiz(false);
+  if (build.on) exitBuild();
   showSub(null);
 });
 renderer.xr.addEventListener('sessionend', () => {
@@ -829,6 +851,7 @@ renderer.xr.addEventListener('sessionend', () => {
   marker.visible = false;
   controllers.forEach(release);
   quizMesh.visible = false; quiz.open = false;
+  if (build.on) exitBuild();
   showSub(null);
 });
 
@@ -866,6 +889,9 @@ function updateXR(dt) {
 
     const gp = c.userData.gamepad;
     if (!gp) continue;
+    if (c.userData.hand === 'right' && pressedOnce(c, 3)) { if (!build.on) startBuild(); else if (build.stage < BUILD.length - 1) goStage(build.stage + 1); else exitBuild(); }
+    if (c.userData.hand === 'left' && pressedOnce(c, 3) && build.on) exitBuild();
+    if (build.on) continue;
     if (c.userData.hand === 'left' && pressedOnce(c, 5)) openQuiz(!quiz.open);
     if (c.userData.hand === 'left' && pressedOnce(c, 4)) {
       const insideNow = inZone(dolly.position.x, dolly.position.z) && dolly.position.y < 3;
@@ -903,6 +929,159 @@ function updateXR(dt) {
   showLabel(cutaway && shownMound === bigMound ? null : shownMound);
 }
 
+const BUILD = [
+  { t: '1-кезең · Алаң белгіленеді', x: 'Оба үшін биік, алыстан көрінетін орын таңдалады. Жер тегістеліп, болашақ обаның шеңбері белгіленеді — диаметрі шамамен 100 метр.',
+    vr: [0, 16, 85], look: [0, 0, 0], cam: [70, 55, 120], tgt: [0, 0, 0] },
+  { t: '2-кезең · Бөрене камера', x: 'Шеңбердің ортасында шыршадан қиылған бөренелерден жерлеу камерасы тұрғызылады. Бөренелер қабат-қабат қаланады.',
+    vr: [0, 3, 8], look: [0, 1, 0], cam: [7, 5, 9], tgt: [0, 1, 0] },
+  { t: '3-кезең · Жерлеу', x: 'Марқұмды ағаш төсекке жатқызып, киізбен жабады. Қасына қыш ыдыстар, қола қазан және қару-жарақ қойылады.',
+    vr: [0, 2.5, 6], look: [0, 0.5, -1.5], cam: [4, 4, 5], tgt: [0, 0.5, -1.5] },
+  { t: '4-кезең · Төбе жабылады', x: 'Камераның үсті бөренелермен жабылып, үстінен топырақ төселеді.',
+    vr: [5, 5, 7], look: [0, 2, 0], cam: [8, 7, 9], tgt: [0, 1.5, 0] },
+  { t: '5-кезең · Дромос', x: 'Камерадан обаның етегіне дейін ұзын кіреберіс дәліз — дромос салынады. Кіреберіс тастармен бекітіледі.',
+    vr: [14, 8, 62], look: [0, 0, 30], cam: [25, 14, 72], tgt: [0, 0, 28] },
+  { t: '6-кезең · Топырақ пен шым үйіледі', x: 'Камера мен дәліздің үстіне топырақ пен шым кезек-кезек, қабат-қабат үйіледі. Оба біртіндеп 14 метр биіктікке жетеді.',
+    vr: [30, 8, 120], look: [0, 5, 0], cam: [70, 30, 150], tgt: [0, 6, 0] },
+  { t: '7-кезең · Оба дайын', x: 'Ең үлкен Боралдай обасы осылай салынған болуы мүмкін. Бұл — Жетісу сақ обаларына тән үлгі бойынша жасалған реконструкция.',
+    vr: [0, 0, 135], look: [0, 7, 0], cam: [-6, 1.7, 135], tgt: [0, 7, 0] }
+];
+const ANIM = 6, HOLD = 7;
+const build = { on: false, stage: 0, prog: 0, hold: 0, playing: true, camT: 0 };
+const ring = new THREE.Mesh(new THREE.RingGeometry(49.4, 50.6, 160).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, fog: false }));
+ring.material.polygonOffset = true; ring.material.polygonOffsetFactor = -8; ring.material.polygonOffsetUnits = -16;
+ring.position.y = 0.3; ring.visible = false;
+scene.add(ring);
+const pegs = new THREE.Group();
+for (let i = 0; i < 24; i++) {
+  const a = i / 24 * Math.PI * 2;
+  const peg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.2, 6), woodMat);
+  peg.position.set(Math.cos(a) * 50, 0.6, Math.sin(a) * 50);
+  pegs.add(peg);
+}
+pegs.visible = false;
+scene.add(pegs);
+const platform = new THREE.Group();
+const disc = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.15, 24), woodMat);
+disc.position.y = -0.075;
+platform.add(disc);
+const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 1, 8), woodMat);
+platform.add(pole);
+platform.visible = false;
+scene.add(platform);
+const bandC = document.createElement('canvas');
+bandC.width = 64; bandC.height = 512;
+{
+  const g = bandC.getContext('2d');
+  for (let i = 0; i < 16; i++) {
+    g.fillStyle = i % 2 ? '#6f8a45' : '#8a6b44';
+    g.fillRect(0, i * 32, 64, 32);
+    for (let k = 0; k < 120; k++) { g.fillStyle = `rgba(0,0,0,${Math.random() * 0.25})`; g.fillRect(Math.random() * 64, i * 32 + Math.random() * 32, 2, 2); }
+  }
+}
+const bandTex = new THREE.CanvasTexture(bandC);
+bandTex.colorSpace = THREE.SRGBColorSpace;
+const bandMat = new THREE.MeshLambertMaterial({ map: bandTex, shadowSide: THREE.DoubleSide });
+
+const kk = (s, i) => THREE.MathUtils.clamp(s - i, 0, 1);
+function applyBuild(s) {
+  const on = build.on;
+  ring.visible = on && s < 6.5; ring.material.opacity = kk(s, 0) * 0.9;
+  pegs.visible = on && s < 5.5 && kk(s, 0) > 0.5;
+  const k1 = kk(s, 1);
+  wallLogs.forEach(L => { L.visible = k1 > 0 && L.position.y <= 0.17 + k1 * (CH_H - 0.16); });
+  chFloor.visible = s >= 1;
+  const k2 = kk(s, 2);
+  burialParts.forEach(m => { m.visible = k2 > 0.25; });
+  artifacts.forEach(a => { if (a.parent === interior) a.visible = k2 > 0.6; });
+  torch.visible = flame.visible = s >= 1;
+  sign2.visible = s >= 6;
+  const k3 = kk(s, 3);
+  roofLogs.forEach(L => { L.visible = k3 > 0 && L.position.z <= -CH - 0.2 + k3 * (CH * 2 + 0.5); });
+  lid.visible = k3 >= 0.98;
+  const k4 = kk(s, 4);
+  corridorParts.forEach(m => {
+    m.visible = k4 > 0;
+    m.scale.z = m === corFloor ? 1 : Math.max(k4, 0.001);
+    if (m === corFloor) { m.scale.y = Math.max(k4, 0.001); }
+    m.position.z = CH + k4 * corLen / 2;
+  });
+  portalParts.forEach(m => { m.visible = k4 >= 0.98; });
+  torch2.visible = k4 > 0.5;
+  const k5 = kk(s, 5);
+  bigMound.visible = k5 > 0;
+  bigMound.scale.set(50, Math.max(0.01, k5 * 14), 50);
+  bigMound.material = s < 6.5 ? bandMat : normalMoundMat;
+  sign3.visible = s >= 6.5;
+}
+function setViewForStage(i) {
+  const v = BUILD[i];
+  if (renderer.xr.isPresenting) {
+    dolly.position.set(v.vr[0], v.vr[1], v.vr[2]);
+    dolly.rotation.set(0, Math.atan2(-(v.look[0] - v.vr[0]), -(v.look[2] - v.vr[2])), 0);
+    platform.visible = build.on && v.vr[1] > 0.5;
+    platform.position.set(v.vr[0], v.vr[1], v.vr[2]);
+    pole.scale.y = v.vr[1]; pole.position.y = -v.vr[1] / 2 - 0.15;
+  } else {
+    build.camT = 2.5;
+  }
+}
+function updateBuildUI() {
+  const v = BUILD[build.stage];
+  document.getElementById('buildStage').textContent = (build.stage + 1) + ' / ' + BUILD.length;
+  document.getElementById('buildPlay').textContent = build.playing ? '⏸ Тоқтату' : '▶ Жалғастыру';
+  showSub(v.t, v.x);
+}
+function goStage(i) {
+  build.stage = THREE.MathUtils.clamp(i, 0, BUILD.length - 1);
+  build.prog = 0; build.hold = 0;
+  setViewForStage(build.stage);
+  updateBuildUI();
+}
+function startBuild() {
+  if (quiz.open) openQuiz(false);
+  stopGuide();
+  setCutaway(false);
+  controllers.forEach(release);
+  build.on = true; build.playing = true;
+  document.getElementById('build').style.display = 'flex';
+  document.getElementById('buildBtn').classList.add('on');
+  goStage(0);
+}
+function exitBuild() {
+  build.on = false;
+  document.getElementById('build').style.display = 'none';
+  document.getElementById('buildBtn').classList.remove('on');
+  platform.visible = false;
+  bigMound.scale.set(50, 14, 50);
+  applyBuild(7);
+  showSub(null);
+  if (renderer.xr.isPresenting) { dolly.position.copy(START); dolly.rotation.set(0, 0, 0); }
+}
+function updateBuild(dt) {
+  if (!build.on) return;
+  if (build.prog < 1) build.prog = Math.min(1, build.prog + dt / ANIM);
+  else if (build.playing && build.stage < BUILD.length - 1) {
+    build.hold += dt;
+    if (build.hold > HOLD) goStage(build.stage + 1);
+  }
+  applyBuild(build.stage + build.prog);
+  if (!renderer.xr.isPresenting && build.camT > 0) {
+    build.camT -= dt;
+    const v = BUILD[build.stage], a = 1 - Math.exp(-dt * 2.2);
+    camera.position.lerp(new THREE.Vector3(...v.cam), a);
+    controls.target.lerp(new THREE.Vector3(...v.tgt), a);
+  }
+}
+document.getElementById('buildBtn').onclick = () => build.on ? exitBuild() : startBuild();
+document.getElementById('build').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const act = b.dataset.b;
+  if (act === 'prev') goStage(build.stage - 1);
+  else if (act === 'next') goStage(build.stage + 1);
+  else if (act === 'play') { build.playing = !build.playing; updateBuildUI(); }
+  else if (act === 'exit') exitBuild();
+});
+
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
@@ -915,7 +1094,8 @@ renderer.setAnimationLoop(() => {
   const insideView = inZone(camPos.x, camPos.z) && camPos.y < 3.5;
   hemi.intensity += ((insideView ? 0.12 : 0.9) - hemi.intensity) * Math.min(1, dt * 4);
   updateAudio(dt, camPos);
-  checkGuide(camPos);
+  updateBuild(dt);
+  if (!build.on) checkGuide(camPos);
   if (label.visible) {
     const s = Math.max(2, camPos.distanceTo(label.position) * 0.08);
     label.scale.set(s, s * 0.375, 1);
